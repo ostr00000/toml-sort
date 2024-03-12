@@ -227,6 +227,7 @@ class CommentConfiguration:
     footer: bool = True
     inline: bool = True
     block: bool = True
+    orphan: bool = False
 
 
 @dataclass
@@ -344,7 +345,7 @@ class TomlSort:
 
         return SortConfiguration(**merged_config)
 
-    def sort_array(
+    def sort_array(  # pylint: disable=too-many-branches
         self, keys: TomlSortKeys, array: Array, indent_depth: int = 0
     ) -> Array:
         """Sort and format an inline array item while preserving comments."""
@@ -363,7 +364,8 @@ class TomlSort:
             ):
                 # Previous comments are orphaned if there is whitespace
                 if (
-                    array_item.indent is not None
+                    not self.comment_config.orphan
+                    and array_item.indent is not None
                     and "\n\n" in array_item.indent.as_string()
                 ):
                     comments = []
@@ -404,11 +406,15 @@ class TomlSort:
 
         if self.sort_config(keys).inline_arrays:
             new_array_items = sorted(new_array_items, key=self.array_sort_func)
-        new_array_value = []
-        for array_item, comments in new_array_items:
-            if comments and self.comment_config.block:
-                new_array_value.extend(comments)
+        new_array_value: List[_ArrayItemGroup] = []
+        for array_item, array_comments in new_array_items:
+            if array_comments and self.comment_config.block:
+                new_array_value.extend(array_comments)
             new_array_value.append(array_item)
+
+        if self.comment_config.block and self.comment_config.orphan:
+            # add comments defined at the end of array
+            new_array_value.extend(comments)
 
         if len(new_array_value) != 0 and not (
             multiline and self.format_config.trailing_comma_inline_array
@@ -680,7 +686,11 @@ class TomlSort:
         for key, value in parent:
             if key is None:
                 if isinstance(value, Whitespace):
-                    comments = []
+                    if not self.comment_config.orphan:
+                        comments = []
+                    elif comments and not isinstance(comments[-1], Comment):
+                        comments.append(Comment(Trivia(comment="#")))
+
                 elif isinstance(value, Comment) and self.comment_config.block:
                     comment_spaces = (
                         self.format_config.spaces_before_inline_comment

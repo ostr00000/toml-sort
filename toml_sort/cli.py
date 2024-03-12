@@ -111,6 +111,7 @@ def parse_config(tomlsort_section: TOMLDocument) -> Dict[str, Any]:
     validate_and_copy(config, clean_config, "no_footer_comments", bool)
     validate_and_copy(config, clean_config, "no_inline_comments", bool)
     validate_and_copy(config, clean_config, "no_block_comments", bool)
+    validate_and_copy(config, clean_config, "no_orphan_comments", bool)
     validate_and_copy(config, clean_config, "check", bool)
     validate_and_copy(config, clean_config, "ignore_case", bool)
     validate_and_copy(config, clean_config, "no_sort_tables", bool)
@@ -318,6 +319,12 @@ Notes:
         help="remove a document's block comments",
         action="store_true",
     )
+    comments.add_argument(
+        "--no-orphan-comments",
+        help="remove a document's orphan comments",
+        action="store_true",
+        default=True,  # for compatibility with older versions
+    )
     formatting = parser.add_argument_group(
         "formatting", "options to change output formatting"
     )
@@ -422,6 +429,7 @@ def cli(  # pylint: disable=too-many-branches,too-many-locals
                 footer=not bool(args.no_footer_comments or args.no_comments),
                 block=not bool(args.no_block_comments or args.no_comments),
                 inline=not bool(args.no_inline_comments or args.no_comments),
+                orphan=not bool(args.no_orphan_comments or args.no_comments),
             ),
             sort_config=SortConfiguration(
                 ignore_case=args.ignore_case,
