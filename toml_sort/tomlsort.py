@@ -345,19 +345,67 @@ class TomlSort:
 
         return SortConfiguration(**merged_config)
 
-    def sort_array(  # pylint: disable=too-many-branches
+    def sort_array(
         self, keys: TomlSortKeys, array: Array, indent_depth: int = 0
     ) -> Array:
         """Sort and format an inline array item while preserving comments."""
         multiline = "\n" in array.as_string()
+        comments, new_array_items = self.group_array_items_and_comments(
+            keys, array, indent_depth, multiline
+        )
+
+        if self.sort_config(keys).inline_arrays:
+            new_array_items = sorted(new_array_items, key=self.array_sort_func)
+
+        new_array_value: List[_ArrayItemGroup] = []
+        for array_item, array_comments in new_array_items:
+            if array_comments and self.comment_config.block:
+                new_array_value.extend(array_comments)
+            new_array_value.append(array_item)
+
+        if self.comment_config.block and self.comment_config.orphan:
+            # add comments defined at the end of array
+            new_array_value.extend(comments)
+
+        if len(new_array_value) != 0 and not (
+            multiline and self.format_config.trailing_comma_inline_array
+        ):
+            new_array_value[-1].comma = Whitespace("")
+
+        if multiline:
+            indent_size = self.format_config.spaces_indent_inline_array
+            array_item = _ArrayItemGroup()
+            array_item.value = Whitespace(
+                "\n" + " " * indent_size * indent_depth
+            )
+            new_array_value.append(array_item)
+
+        array._value = new_array_value  # pylint: disable=protected-access
+        array._reindex()  # pylint: disable=protected-access
+        array = normalize_trivia(
+            array,
+            include_comments=self.comment_config.inline,
+            comment_spaces=self.format_config.spaces_before_inline_comment,
+        )
+        return array
+
+    def group_array_items_and_comments(
+        self,
+        keys: TomlSortKeys,
+        array: Array,
+        indent_depth: int,
+        multiline: bool,
+    ):
+        """Group items and corresponding comments in array before sorting."""
         indent_size = self.format_config.spaces_indent_inline_array
         indent = (
             "\n" + " " * indent_size * (indent_depth + 1) if multiline else ""
         )
         comma = "," if multiline else ", "
-
         comments: List[_ArrayItemGroup] = []
-        new_array_items = []
+        new_array_items: List[
+            Tuple[_ArrayItemGroup, List[_ArrayItemGroup]]
+        ] = []
         for array_item in array._value:  # pylint: disable=protected-access
             if isinstance(array_item.value, Null) and isinstance(
                 array_item.comment, Comment
@@ -404,38 +452,7 @@ class TomlSort:
                     else indent_depth,
                 )
 
-        if self.sort_config(keys).inline_arrays:
-            new_array_items = sorted(new_array_items, key=self.array_sort_func)
-        new_array_value: List[_ArrayItemGroup] = []
-        for array_item, array_comments in new_array_items:
-            if array_comments and self.comment_config.block:
-                new_array_value.extend(array_comments)
-            new_array_value.append(array_item)
-
-        if self.comment_config.block and self.comment_config.orphan:
-            # add comments defined at the end of array
-            new_array_value.extend(comments)
-
-        if len(new_array_value) != 0 and not (
-            multiline and self.format_config.trailing_comma_inline_array
-        ):
-            new_array_value[-1].comma = Whitespace("")
-
-        if multiline:
-            array_item = _ArrayItemGroup()
-            array_item.value = Whitespace(
-                "\n" + " " * indent_size * indent_depth
-            )
-            new_array_value.append(array_item)
-
-        array._value = new_array_value  # pylint: disable=protected-access
-        array._reindex()  # pylint: disable=protected-access
-        array = normalize_trivia(
-            array,
-            include_comments=self.comment_config.inline,
-            comment_spaces=self.format_config.spaces_before_inline_comment,
-        )
-        return array
+        return comments, new_array_items
 
     def sort_item(
         self, keys: TomlSortKeys, item: Item, indent_depth: int = 0
